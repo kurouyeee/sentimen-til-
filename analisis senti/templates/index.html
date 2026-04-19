@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Analisis Sentimen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* CSS tambahan untuk animasi transisi tab */
+        .tab-content { display: none; animation: fadeIn 0.5s; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .kartu-aktif { border-color: #e54646; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+
+    <div class="max-w-6xl mx-auto py-12 px-4">
+        
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-indigo-700 leading-tight">
+                Analisis Sentimen Publik Terhadap<br>Prospek Kerja Pemadam Kebakaran
+            </h1>
+        </div>
+
+        {% if not info_kartu %}
+        <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-10">
+            <h2 class="text-xl font-bold text-slate-700 mb-6 text-center">Analisis Data CSV</h2>
+            <form action="/upload" method="POST" enctype="multipart/form-data" class="flex flex-col items-center">
+                <label class="w-full flex flex-col items-center px-4 py-6 bg-indigo-50 text-indigo-700 rounded-lg border-2 border-dashed border-indigo-300 cursor-pointer hover:bg-indigo-100 transition-all">
+                    <svg class="w-8 h-8" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M16.88 9.1L13.47 5.69c-.39-.39-1.02-.39-1.41 0L8.65 9.09c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.94-1.94V15c0 .55.45 1 1 1s1-.45 1-1V9.56l1.94 1.94c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41z"/></svg>
+                    <span class="mt-2 text-base font-semibold">Pilih file CSV bersih Anda</span>
+                    <input type='file' name="file" class="hidden" accept=".csv" required />
+                </label>
+                <button type="submit" class="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-10 rounded-full shadow-lg transition-all">
+                    Mulai Analisis
+                </button>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if info_kartu %}
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            
+            <div id="menu-data" onclick="bukaTab('tab-data', 'menu-data')" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent text-center flex flex-col items-center justify-center cursor-pointer hover:border-indigo-300 transition-all kartu-aktif">
+                <p class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Jumlah Data</p>
+                <p class="text-4xl font-extrabold text-indigo-700">{{ info_kartu.total_data }}</p>
+                <p class="text-xs text-slate-400 mt-1">Klik untuk lihat tabel</p>
+            </div>
+            
+            <div id="menu-split" onclick="bukaTab('tab-split', 'menu-split')" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent text-center flex flex-col items-center justify-center cursor-pointer hover:border-indigo-300 transition-all">
+                <p class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Split Data</p>
+                <div class="flex gap-4 w-full justify-center">
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-blue-600">{{ info_kartu.data_latih }}</p>
+                    </div>
+                    <div class="border-l border-slate-200"></div>
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-orange-500">{{ info_kartu.data_uji }}</p>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mt-2">Klik untuk detail</p>
+            </div>
+            
+            <div id="menu-komparasi" onclick="bukaTab('tab-komparasi', 'menu-komparasi')" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent text-center flex flex-col items-center justify-center cursor-pointer hover:border-indigo-300 transition-all">
+                <p class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Akurasi Model</p>
+                <div class="w-full px-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-slate-600">NB</span>
+                        <span class="text-sm font-extrabold text-blue-600 bg-blue-50 px-2 py-1 rounded">{{ komparasi.akurasi_nb }}%</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-slate-600">SVM</span>
+                        <span class="text-sm font-extrabold text-red-600 bg-red-50 px-2 py-1 rounded">{{ komparasi.akurasi_svm }}%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="menu-visualisasi" onclick="bukaTab('tab-visualisasi', 'menu-visualisasi')" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-transparent text-center flex flex-col items-center justify-center cursor-pointer hover:border-indigo-300 transition-all">
+                <p class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Visualisasi</p>
+                <p class="text-xs text-slate-500 mb-3">Grafik & WordCloud</p>
+                <span class="text-xs font-bold bg-indigo-50 text-indigo-700 px-4 py-2 rounded-full">Buka &rarr;</span>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if data_tabel %}
+        <div id="tab-data" class="tab-content active bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+            <h2 class="text-xl font-bold text-slate-700 mb-4">Detail Data CSV</h2>
+            <p class="text-slate-500 mb-4">Menampilkan sebagian data dari file <strong>{{ nama_file }}</strong> dengan total {{ info_kartu.total_data }} baris teks.</p>
+            <div class="rounded-xl overflow-hidden border border-slate-200">
+                <div class="overflow-x-auto h-96">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 bg-indigo-600 text-white text-sm uppercase">
+                            <tr>
+                                {% for k in kolom %}
+                                <th class="px-6 py-4 font-semibold whitespace-nowrap">{{ k }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {% for row in data_tabel %}
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                {% for k in kolom %}
+                                <td class="px-6 py-4 text-sm text-slate-600">{{ row[k] }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if info_kartu %}
+        <div id="tab-split" class="tab-content bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+            <h2 class="text-xl font-bold text-slate-700 mb-6">Informasi Pembagian Data (Data Split)</h2>
+            <div class="flex flex-col md:flex-row gap-6">
+                <div class="flex-1 bg-blue-50 p-6 rounded-xl border border-blue-100 text-center">
+                    <h3 class="text-lg font-bold text-blue-700 mb-2">Data Latih (Training Data)</h3>
+                    <p class="text-5xl font-extrabold text-blue-600 mb-2">{{ info_kartu.data_latih }}</p>
+                    <p class="text-sm text-blue-500">80% dari total data. Digunakan oleh mesin (Naive Bayes & SVM) untuk belajar mengenali pola kalimat positif dan negatif.</p>
+                </div>
+                <div class="flex-1 bg-orange-50 p-6 rounded-xl border border-orange-100 text-center">
+                    <h3 class="text-lg font-bold text-orange-700 mb-2">Data Uji (Testing Data)</h3>
+                    <p class="text-5xl font-extrabold text-orange-500 mb-2">{{ info_kartu.data_uji }}</p>
+                    <p class="text-sm text-orange-500">20% dari total data. Digunakan sebagai soal ujian untuk mengukur seberapa akurat tebakan mesin kita.</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if komparasi %}
+        <div id="tab-komparasi" class="tab-content bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+            <h2 class="text-xl font-bold text-slate-700 mb-6">Hasil Komparasi Algoritma</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                <div class="flex flex-col gap-4">
+                    <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
+                        <p class="text-sm text-blue-600 font-semibold uppercase">Akurasi Naive Bayes</p>
+                        <p class="text-4xl font-extrabold text-blue-700 mt-1">{{ komparasi.akurasi_nb }}%</p>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded-xl border border-red-100 text-center">
+                        <p class="text-sm text-red-600 font-semibold uppercase">Akurasi SVM</p>
+                        <p class="text-4xl font-extrabold text-red-700 mt-1">{{ komparasi.akurasi_svm }}%</p>
+                    </div>
+                </div>
+                <div class="col-span-2">
+                    <img src="data:image/png;base64,{{ komparasi.grafik }}" alt="Grafik Komparasi" class="w-full h-auto rounded-lg shadow-sm border border-slate-100">
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if visualisasi %}
+        <div id="tab-visualisasi" class="tab-content bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
+            <h2 class="text-xl font-bold text-slate-700 mb-6">Visualisasi Data</h2>
+            <div class="mb-8">
+                <h3 class="text-md font-semibold text-slate-500 mb-2">Distribusi Sentimen Keseluruhan</h3>
+                <img src="data:image/png;base64,{{ visualisasi.plot_bar }}" alt="Bar Chart Sentimen" class="w-full max-w-3xl mx-auto rounded-lg shadow-sm border border-slate-100">
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-md font-semibold text-slate-500 mb-2">Word Cloud Sentimen Positif</h3>
+                    {% if visualisasi.wc_positif %}
+                        <img src="data:image/png;base64,{{ visualisasi.wc_positif }}" alt="Wordcloud Positif" class="w-full rounded-lg shadow-sm border border-slate-100">
+                    {% else %}
+                        <p class="text-sm text-red-400 italic">Tidak ada data sentimen positif.</p>
+                    {% endif %}
+                </div>
+                <div>
+                    <h3 class="text-md font-semibold text-slate-500 mb-2">Word Cloud Sentimen Negatif</h3>
+                    {% if visualisasi.wc_negatif %}
+                        <img src="data:image/png;base64,{{ visualisasi.wc_negatif }}" alt="Wordcloud Negatif" class="w-full rounded-lg shadow-sm border border-slate-100">
+                    {% else %}
+                        <p class="text-sm text-red-400 italic">Tidak ada data sentimen negatif.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <script>
+        function bukaTab(idTab, idMenu) {
+            // 1. Sembunyikan semua konten tab
+            var konten = document.getElementsByClassName("tab-content");
+            for (var i = 0; i < konten.length; i++) {
+                konten[i].classList.remove("active");
+            }
+
+            // 2. Hilangkan sorotan (highlight) dari semua kartu menu
+            var menu = [
+                document.getElementById('menu-data'), 
+                document.getElementById('menu-split'), 
+                document.getElementById('menu-komparasi'), 
+                document.getElementById('menu-visualisasi')
+            ];
+            for (var i = 0; i < menu.length; i++) {
+                if (menu[i]) {
+                    menu[i].classList.remove("kartu-aktif");
+                }
+            }
+
+            // 3. Tampilkan tab yang dipilih
+            document.getElementById(idTab).classList.add("active");
+            
+            // 4. Berikan sorotan pada kartu menu yang sedang diklik
+            document.getElementById(idMenu).classList.add("kartu-aktif");
+        }
+    </script>
+</body>
+</html>
