@@ -1,34 +1,20 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-import io
-import base64
-# import pickle, sklearn, dll yang kamu butuhkan
 
-def prediksi_teks(teks_baru):
-    # --- Masukkan kode klasifikasi kamu di sini ---
-    # Contoh (Asumsi model sudah di-load):
-    # hasil = model.predict([teks_baru])
-    return "Positif" # (Ini contoh kembaliannya)
+from klasifikasi import prediksi_teks_tunggal
+from kompirasi import jalankan_komparasi
+from visualisasi import jalankan_visualisasi
 
-def data_komparasi():
-    # --- Masukkan kode komparasi model di sini ---
-    # Biasanya mengembalikan metrik akurasi
-    return {
-        "model": ["Naive Bayes", "SVM", "Random Forest"],
-        "akurasi": [85, 92, 88]
-    }
 
-def buat_visualisasi_wordcloud(df):
-    # --- Masukkan kode visualisasi Python (Matplotlib/WordCloud) di sini ---
-    plt.figure(figsize=(6,4))
-    plt.text(0.5, 0.5, "Contoh Wordcloud", fontsize=20, ha='center') # Ganti dengan Wordcloud asli
-    plt.axis('off')
-    
-    # RAHASIA WEB: Ubah gambar plot menjadi teks Base64 agar bisa dibaca HTML
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', bbox_inches='tight')
-    buffer.seek(0)
-    image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    plt.close()
-    
-    return image_base64
+def prediksi_teks(teks_baru: str) -> str:
+    return prediksi_teks_tunggal(teks_baru)
+
+
+def data_komparasi(input_path: str = "data_berlabel.csv") -> dict:
+    return jalankan_komparasi(input_path=input_path)
+
+
+def buat_visualisasi_wordcloud(df: pd.DataFrame | None = None) -> str:
+    if df is not None:
+        df.to_csv("data_berlabel.csv", index=False)
+    hasil = jalankan_visualisasi()
+    return hasil.get("wc_positif") or hasil.get("wc_negatif") or ""
