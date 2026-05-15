@@ -56,7 +56,7 @@ def _hasil_kosong(pesan: str = "") -> dict:
 
 
 def _pilih_kolom_label(df: pd.DataFrame) -> str | None:
-    for kolom in ["label_pakar", "label_sentimen", "label_otomatis"]:
+    for kolom in ["label_sentimen", "label_otomatis", "label_pakar"]:
         if kolom in df.columns:
             label_bersih = df[kolom].apply(_normalisasi_label)
             if label_bersih.ne("").sum() > 0:
@@ -68,7 +68,7 @@ def _pilih_kolom_label(df: pd.DataFrame) -> str | None:
 def _pilih_kolom_teks(df: pd.DataFrame) -> str | None:
     return _cari_kolom(
         df,
-        ["text_stemmed", "text_stopword", "text_clean", "full_text_bersih", "full_text", "text"],
+        ["text_clean", "text_stopword", "text_stemmed", "full_text_bersih", "full_text", "text"],
     )
 
 

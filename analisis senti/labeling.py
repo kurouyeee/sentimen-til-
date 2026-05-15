@@ -8,9 +8,9 @@ LABEL_VALID = {"positif", "netral", "negatif"}
 
 def _cari_kolom_teks(df: pd.DataFrame) -> str | None:
     kandidat = [
-        "text_stemmed",
-        "text_stopword",
         "text_clean",
+        "text_stopword",
+        "text_stemmed",
         "full_text_bersih",
         "full_text",
         "text",

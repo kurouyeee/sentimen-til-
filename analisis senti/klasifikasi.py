@@ -13,7 +13,7 @@ KATA_POSITIF = {
     "respect", "makasih", "terimakasih", "ngebantu", "menolong",
     "pertolongan", "penyelamat", "amanah", "sopan", "santun",
     "mendidik", "bermanfaat", "berguna", "lucu", "gesit", "mulia",
-    "berjasa", "tertolong", "terkendali",
+    "berjasa", "tertolong", "terkendali", "terbaik", 
 }
 
 KATA_NEGATIF = {
@@ -23,12 +23,12 @@ KATA_NEGATIF = {
     "takut", "musibah", "lambatnya", "kurang", "payah", "lelet",
     "nyebelin", "mengerikan", "hancur", "macet", "halang", "rusuh",
     "mainmain", "kesel", "kesal", "najis", "bajingan", "keparat",
-    "bangsat", "goblok", "tolol", "terbakar", "kebakaran",
+    "bangsat", "goblok", "tolol", "terbakar",
 }
 
 FRASA_POSITIF = {
     "terima kasih", "terima kasih banyak", "gerak cepat", "respon cepat",
-    "cepat tanggap", "sangat membantu",
+    "cepat tanggap", "sangat membantu", "berhasil evakuasi", "selamatkan korban",
 }
 
 FRASA_NEGATIF = {
@@ -49,9 +49,9 @@ def _bersihkan_teks(teks: str) -> str:
 
 def _cari_kolom_teks(df: pd.DataFrame) -> str | None:
     kandidat = [
-        "text_stemmed",
-        "text_stopword",
         "text_clean",
+        "text_stopword",
+        "text_stemmed",
         "full_text_bersih",
         "full_text",
         "text",

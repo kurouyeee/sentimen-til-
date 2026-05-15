@@ -1,6 +1,7 @@
 from pathlib import Path
 import glob
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ DATA_TEMP = BASE_DIR / "data_sementara.csv"
 DATA_PREPROCESSING = BASE_DIR / "data_preprocessing.csv"
 DATA_BERLABEL = BASE_DIR / "data_berlabel.csv"
 HASIL_KLASIFIKASI = BASE_DIR / "hasil_klasifikasi.csv"
+SPLIT_CONFIG = BASE_DIR / "split_config.json"
 TWEETS_DIR = BASE_DIR / "tweets-data"
 
 app = FastAPI()
@@ -48,27 +50,6 @@ def baca_csv_fleksibel(path: str | Path) -> pd.DataFrame:
         except Exception as exc:  # pragma: no cover
             error_terakhir = exc
     raise ValueError(f"Gagal membaca CSV {path.name}: {error_terakhir}")
-
-
-def baca_csv_dari_bytes(isi: bytes) -> pd.DataFrame:
-    percobaan = [
-        {"encoding": "utf-8"},
-        {"encoding": "utf-8-sig"},
-        {"sep": ";", "encoding": "utf-8"},
-        {"sep": ";", "encoding": "utf-8-sig"},
-        {"encoding": "latin1"},
-        {"sep": ";", "encoding": "latin1"},
-    ]
-    error_terakhir = None
-    for opsi in percobaan:
-        try:
-            df = pd.read_csv(io.BytesIO(isi), **opsi)
-            if len(df.columns) == 1 and opsi.get("sep") != ";":
-                continue
-            return df
-        except Exception as exc:  # pragma: no cover
-            error_terakhir = exc
-    raise ValueError(f"Gagal membaca CSV upload: {error_terakhir}")
 
 
 def _cari_kolom(df: pd.DataFrame, kandidat: list[str]) -> str | None:
@@ -99,15 +80,42 @@ def siapkan_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def info_pembagian(total_data: int) -> dict:
-    data_latih = int(total_data * 0.8)
+def baca_konfigurasi_split() -> dict:
+    default = {"rasio_latih": 80, "rasio_uji": 20}
+    if not SPLIT_CONFIG.exists():
+        return default
+
+    try:
+        config = json.loads(SPLIT_CONFIG.read_text(encoding="utf-8"))
+        rasio_latih = int(config.get("rasio_latih", 80))
+        return normalisasi_konfigurasi_split(rasio_latih)
+    except Exception:
+        return default
+
+
+def normalisasi_konfigurasi_split(rasio_latih: int) -> dict:
+    rasio_latih = max(50, min(int(rasio_latih), 90))
+    return {"rasio_latih": rasio_latih, "rasio_uji": 100 - rasio_latih}
+
+
+def simpan_konfigurasi_split(rasio_latih: int) -> dict:
+    config = normalisasi_konfigurasi_split(rasio_latih)
+    SPLIT_CONFIG.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    return config
+
+
+def info_pembagian(total_data: int, rasio_latih: int | None = None) -> dict:
+    if rasio_latih is None:
+        rasio_latih = baca_konfigurasi_split()["rasio_latih"]
+    rasio_uji = 100 - rasio_latih
+    data_latih = int(total_data * (rasio_latih / 100))
     data_uji = max(total_data - data_latih, 0)
     return {
         "total_data": total_data,
         "data_latih": data_latih,
         "data_uji": data_uji,
-        "rasio_latih": 80,
-        "rasio_uji": 20,
+        "rasio_latih": rasio_latih,
+        "rasio_uji": rasio_uji,
     }
 
 
@@ -180,7 +188,8 @@ def buat_kesimpulan(visualisasi: dict | None = None, komparasi: dict | None = No
 
 
 def konteks_dasar(status_tab: str = "dashboard") -> dict:
-    konteks: dict = {"status_tab": status_tab}
+    split_config = baca_konfigurasi_split()
+    konteks: dict = {"status_tab": status_tab, "split_config": split_config}
 
     data_tabel, kolom = _ambil_tabel(DATA_TEMP, limit=10)
     if data_tabel:
@@ -189,7 +198,7 @@ def konteks_dasar(status_tab: str = "dashboard") -> dict:
             {
                 "data_tabel": data_tabel,
                 "kolom": kolom,
-                "info_kartu": info_pembagian(total_data),
+                "info_kartu": info_pembagian(total_data, split_config["rasio_latih"]),
                 "nama_file": "Data aktif",
             }
         )
@@ -210,16 +219,21 @@ def konteks_dasar(status_tab: str = "dashboard") -> dict:
         konteks["data_label"] = df_label.head(200).to_dict(orient="records")
         konteks["stats_label"] = hitung_stats_label(df_label)
 
-    klasifikasi_tabel, _ = _ambil_tabel(HASIL_KLASIFIKASI, limit=100)
-    if klasifikasi_tabel:
-        konteks["klasifikasi_tabel"] = klasifikasi_tabel
-
     if DATA_BERLABEL.exists():
         hasil_visualisasi = jalankan_visualisasi(DATA_BERLABEL)
-        hasil_komparasi = jalankan_komparasi(DATA_BERLABEL, HASIL_KLASIFIKASI)
+        hasil_komparasi = jalankan_komparasi(
+            DATA_BERLABEL,
+            HASIL_KLASIFIKASI,
+            rasio_uji=split_config["rasio_uji"],
+        )
         konteks["visualisasi"] = hasil_visualisasi
         konteks["komparasi"] = hasil_komparasi
         konteks["kesimpulan"] = buat_kesimpulan(hasil_visualisasi, hasil_komparasi)
+
+    if DATA_BERLABEL.exists() and not konteks.get("komparasi", {}).get("pesan"):
+        klasifikasi_tabel, _ = _ambil_tabel(HASIL_KLASIFIKASI, limit=100)
+        if klasifikasi_tabel:
+            konteks["klasifikasi_tabel"] = klasifikasi_tabel
 
     return konteks
 
@@ -242,7 +256,12 @@ def jalankan_pipeline_lengkap(df: pd.DataFrame, nama_file: str, status_tab: str 
         df_berlabel["label_otomatis"] = df_berlabel["label_sentimen"]
     df_berlabel.to_csv(DATA_BERLABEL, index=False)
 
-    hasil_komparasi = jalankan_komparasi(DATA_BERLABEL, HASIL_KLASIFIKASI)
+    split_config = baca_konfigurasi_split()
+    hasil_komparasi = jalankan_komparasi(
+        DATA_BERLABEL,
+        HASIL_KLASIFIKASI,
+        rasio_uji=split_config["rasio_uji"],
+    )
     hasil_visualisasi = jalankan_visualisasi(DATA_BERLABEL)
 
     konteks = konteks_dasar(status_tab)
@@ -272,6 +291,57 @@ def pastikan_data_berlabel() -> None:
         shutil.copy(DATA_PREPROCESSING, DATA_BERLABEL)
         return
     raise FileNotFoundError("Belum ada data. Unggah CSV atau lakukan scraping terlebih dahulu.")
+
+
+def siapkan_data_klasifikasi() -> None:
+    if DATA_BERLABEL.exists():
+        df = baca_csv_fleksibel(DATA_BERLABEL)
+    else:
+        input_path = DATA_PREPROCESSING if DATA_PREPROCESSING.exists() else DATA_TEMP
+        if not input_path.exists():
+            raise FileNotFoundError("Belum ada data untuk diklasifikasi.")
+        df = jalankan_klasifikasi(input_path, DATA_BERLABEL)
+
+    df = siapkan_dataframe(df).fillna("")
+
+    label_otomatis_kosong = "label_otomatis" not in df.columns or df["label_otomatis"].apply(
+        lambda nilai: normalisasi_label(nilai, default="")
+    ).eq("").all()
+    if label_otomatis_kosong:
+        df = jalankan_labeling_otomatis(df)
+
+    if "label_sentimen" not in df.columns:
+        df["label_sentimen"] = df["label_otomatis"]
+
+    if "label_pakar" not in df.columns:
+        df["label_pakar"] = df["label_sentimen"]
+    else:
+        df["label_pakar"] = df["label_pakar"].apply(normalisasi_label)
+
+    df["label_otomatis"] = df["label_otomatis"].apply(normalisasi_label)
+    df.to_csv(DATA_BERLABEL, index=False)
+
+
+def konteks_model_klasifikasi(model: str, komparasi: dict | None = None) -> dict:
+    komparasi = komparasi or {}
+    model = str(model).lower().strip()
+
+    if model == "svm":
+        return {
+            "active_model_key": "svm",
+            "active_model": "SVM",
+            "active_prediction_column": "label_prediksi_svm",
+            "active_accuracy": komparasi.get("akurasi_svm", 0),
+            "active_model_color": "rose",
+        }
+
+    return {
+        "active_model_key": "nb",
+        "active_model": "Naive Bayes",
+        "active_prediction_column": "label_prediksi_nb",
+        "active_accuracy": komparasi.get("akurasi_nb", 0),
+        "active_model_color": "blue",
+    }
 
 
 @app.get("/")
@@ -375,11 +445,35 @@ async def proses_preprocessing(request: Request):
         return templates.TemplateResponse(request=request, name="index.html", context=konteks)
 
 
+@app.post("/atur-rasio")
+async def atur_rasio(request: Request, rasio_latih: int = Form(...)):
+    try:
+        split_config = simpan_konfigurasi_split(rasio_latih)
+
+        if DATA_BERLABEL.exists():
+            jalankan_komparasi(
+                DATA_BERLABEL,
+                HASIL_KLASIFIKASI,
+                rasio_uji=split_config["rasio_uji"],
+            )
+
+        konteks = konteks_dasar("split")
+        konteks["pesan_rasio"] = (
+            f"Rasio berhasil diubah menjadi {split_config['rasio_latih']}:"
+            f"{split_config['rasio_uji']}."
+        )
+        return templates.TemplateResponse(request=request, name="index.html", context=konteks)
+    except Exception as exc:
+        konteks = konteks_dasar("split")
+        konteks["pesan_error"] = f"Gagal mengubah rasio: {exc}"
+        return templates.TemplateResponse(request=request, name="index.html", context=konteks)
+
+
 @app.post("/upload-label-pakar")
 async def upload_label_pakar(request: Request, file: UploadFile = File(...)):
     try:
         isi = await file.read()
-        df = baca_csv_dari_bytes(isi)
+        df = pd.read_csv(io.BytesIO(isi))
         df = siapkan_dataframe(df)
         if "label_pakar" not in df.columns:
             kolom_label = _cari_kolom(df, ["label_sentimen", "sentimen", "label"])
@@ -405,22 +499,6 @@ async def label_otomatis(request: Request):
     except Exception as exc:
         konteks = konteks_dasar("label")
         konteks["pesan_error"] = f"Gagal labeling otomatis: {exc}"
-        return templates.TemplateResponse(request=request, name="index.html", context=konteks)
-
-
-@app.post("/sinkron-label")
-async def sinkron_label(request: Request):
-    try:
-        pastikan_data_berlabel()
-        df = baca_csv_fleksibel(DATA_BERLABEL)
-        if "label_otomatis" not in df.columns:
-            df = jalankan_labeling_otomatis(df)
-        df["label_pakar"] = df["label_otomatis"].apply(normalisasi_label)
-        df.to_csv(DATA_BERLABEL, index=False)
-        return await render_label_page(request)
-    except Exception as exc:
-        konteks = konteks_dasar("label")
-        konteks["pesan_error"] = f"Gagal sinkron label: {exc}"
         return templates.TemplateResponse(request=request, name="index.html", context=konteks)
 
 
@@ -462,26 +540,34 @@ async def render_label_page(request: Request):
         return templates.TemplateResponse(request=request, name="index.html", context=konteks)
 
 
-@app.post("/jalankan-klasifikasi")
-async def proses_klasifikasi(request: Request):
+async def render_klasifikasi_model(request: Request, model: str):
     try:
-        input_path = DATA_PREPROCESSING if DATA_PREPROCESSING.exists() else DATA_TEMP
-        if not input_path.exists():
-            raise FileNotFoundError("Belum ada data untuk diklasifikasi.")
-
-        df_berlabel = jalankan_klasifikasi(input_path, DATA_BERLABEL)
-        if "label_pakar" not in df_berlabel.columns:
-            df_berlabel["label_pakar"] = df_berlabel["label_sentimen"]
-        df_berlabel.to_csv(DATA_BERLABEL, index=False)
-        hasil_komparasi = jalankan_komparasi(DATA_BERLABEL, HASIL_KLASIFIKASI)
+        siapkan_data_klasifikasi()
 
         konteks = konteks_dasar("klasifikasi")
-        konteks["komparasi"] = hasil_komparasi
+        konteks.update(konteks_model_klasifikasi(model, konteks.get("komparasi")))
+        konteks["pesan_klasifikasi"] = f"Klasifikasi {konteks['active_model']} berhasil dijalankan."
         return templates.TemplateResponse(request=request, name="index.html", context=konteks)
     except Exception as exc:
         konteks = konteks_dasar("klasifikasi")
+        konteks.update(konteks_model_klasifikasi(model, konteks.get("komparasi")))
         konteks["pesan_error"] = f"Gagal klasifikasi: {exc}"
         return templates.TemplateResponse(request=request, name="index.html", context=konteks)
+
+
+@app.post("/jalankan-klasifikasi")
+async def proses_klasifikasi(request: Request):
+    return await render_klasifikasi_model(request, "nb")
+
+
+@app.post("/jalankan-klasifikasi-nb")
+async def proses_klasifikasi_nb(request: Request):
+    return await render_klasifikasi_model(request, "nb")
+
+
+@app.post("/jalankan-klasifikasi-svm")
+async def proses_klasifikasi_svm(request: Request):
+    return await render_klasifikasi_model(request, "svm")
 
 
 @app.post("/prediksi-teks")
@@ -498,7 +584,12 @@ async def proses_prediksi_teks(request: Request, teks_input: str = Form(...)):
 async def proses_komparasi(request: Request):
     try:
         pastikan_data_berlabel()
-        hasil_komparasi = jalankan_komparasi(DATA_BERLABEL, HASIL_KLASIFIKASI)
+        split_config = baca_konfigurasi_split()
+        hasil_komparasi = jalankan_komparasi(
+            DATA_BERLABEL,
+            HASIL_KLASIFIKASI,
+            rasio_uji=split_config["rasio_uji"],
+        )
         konteks = konteks_dasar("komparasi")
         konteks["komparasi"] = hasil_komparasi
         konteks["kesimpulan"] = buat_kesimpulan(komparasi=hasil_komparasi)
@@ -528,7 +619,12 @@ async def proses_visualisasi(request: Request):
 async def proses_kesimpulan(request: Request):
     try:
         pastikan_data_berlabel()
-        hasil_komparasi = jalankan_komparasi(DATA_BERLABEL, HASIL_KLASIFIKASI)
+        split_config = baca_konfigurasi_split()
+        hasil_komparasi = jalankan_komparasi(
+            DATA_BERLABEL,
+            HASIL_KLASIFIKASI,
+            rasio_uji=split_config["rasio_uji"],
+        )
         hasil_visualisasi = jalankan_visualisasi(DATA_BERLABEL)
         konteks = konteks_dasar("kesimpulan")
         konteks["komparasi"] = hasil_komparasi
@@ -544,14 +640,14 @@ async def proses_kesimpulan(request: Request):
 @app.get("/klasifikasi-nb")
 async def halaman_nb(request: Request):
     konteks = konteks_dasar("klasifikasi")
-    konteks["active_model"] = "Naive Bayes"
+    konteks.update(konteks_model_klasifikasi("nb", konteks.get("komparasi")))
     return templates.TemplateResponse(request=request, name="index.html", context=konteks)
 
 
 @app.get("/klasifikasi-svm")
 async def halaman_svm(request: Request):
     konteks = konteks_dasar("klasifikasi")
-    konteks["active_model"] = "SVM"
+    konteks.update(konteks_model_klasifikasi("svm", konteks.get("komparasi")))
     return templates.TemplateResponse(request=request, name="index.html", context=konteks)
 
 

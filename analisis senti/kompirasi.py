@@ -21,10 +21,13 @@ def _empty_result(pesan: str) -> dict:
     return {
         "akurasi_nb": 0,
         "akurasi_svm": 0,
+        "hasil_nb": {"nama": "Naive Bayes", "akurasi": 0, "kolom_prediksi": "label_prediksi_nb"},
+        "hasil_svm": {"nama": "SVM", "akurasi": 0, "kolom_prediksi": "label_prediksi_svm"},
         "grafik": "",
         "total_data": 0,
         "data_latih": 0,
         "data_uji": 0,
+        "rasio_latih": 80,
         "rasio_uji": 20,
         "label_sumber": "-",
         "kolom_teks": "-",
@@ -60,7 +63,7 @@ def _cari_kolom(df: pd.DataFrame, kandidat: list[str]) -> str | None:
 def _pilih_kolom_teks(df: pd.DataFrame) -> str | None:
     return _cari_kolom(
         df,
-        ["text_stemmed", "text_stopword", "text_clean", "full_text_bersih", "full_text", "text"],
+        ["text_clean", "text_stopword", "text_stemmed", "full_text_bersih", "full_text", "text"],
     )
 
 
@@ -101,6 +104,7 @@ def _buat_grafik(nb_accuracy: float, svm_accuracy: float) -> str:
 def jalankan_komparasi(
     input_path: str | Path = "data_berlabel.csv",
     output_path: str | Path = "hasil_klasifikasi.csv",
+    rasio_uji: int | float = 20,
 ) -> dict:
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -139,7 +143,12 @@ def jalankan_komparasi(
     vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
     X_vector = vectorizer.fit_transform(X)
 
-    test_size = min(0.4, max(0.2, jumlah_kelas / total_data))
+    rasio_uji = max(10, min(float(rasio_uji), 50))
+    test_size = rasio_uji / 100
+    minimum_test_size = jumlah_kelas / total_data
+    minimum_train_size = jumlah_kelas / total_data
+    test_size = max(test_size, minimum_test_size)
+    test_size = min(test_size, 1 - minimum_train_size)
     split_result = train_test_split(
         X_vector,
         y,
@@ -170,19 +179,41 @@ def jalankan_komparasi(
     laporan_nb = classification_report(y_test, nb_pred, output_dict=True, zero_division=0)
     laporan_svm = classification_report(y_test, svm_pred, output_dict=True, zero_division=0)
 
-    kolom_tabel = [
-        kolom for kolom in ["username", "full_text", kolom_teks, kolom_label, "label_prediksi_nb", "label_prediksi_svm"]
-        if kolom in hasil_uji.columns
+    kolom_tabel_prioritas = [
+        "username",
+        "full_text",
+        kolom_teks,
+        "label_pakar",
+        "label_otomatis",
+        "label_sentimen",
+        kolom_label,
+        "label_prediksi_nb",
+        "label_prediksi_svm",
     ]
+    kolom_tabel = []
+    for kolom in kolom_tabel_prioritas:
+        if kolom in hasil_uji.columns and kolom not in kolom_tabel:
+            kolom_tabel.append(kolom)
     tabel_prediksi = hasil_uji[kolom_tabel].head(100).to_dict(orient="records")
 
     return {
         "akurasi_nb": round(nb_accuracy, 2),
         "akurasi_svm": round(svm_accuracy, 2),
+        "hasil_nb": {
+            "nama": "Naive Bayes",
+            "akurasi": round(nb_accuracy, 2),
+            "kolom_prediksi": "label_prediksi_nb",
+        },
+        "hasil_svm": {
+            "nama": "SVM",
+            "akurasi": round(svm_accuracy, 2),
+            "kolom_prediksi": "label_prediksi_svm",
+        },
         "grafik": _buat_grafik(nb_accuracy, svm_accuracy),
         "total_data": total_data,
         "data_latih": int(len(idx_train)),
         "data_uji": int(len(idx_test)),
+        "rasio_latih": round(len(idx_train) / total_data * 100, 2),
         "rasio_uji": round(len(idx_test) / total_data * 100, 2),
         "label_sumber": kolom_label,
         "kolom_teks": kolom_teks,
